@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Invoice QC Console</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="min-h-screen flex justify-center items-center bg-gradient-to-br from-blue-400 via-green-300 to-pink-300">
+
+    <div class="bg-white/40 backdrop-blur-xl shadow-2xl p-10 rounded-2xl border border-white/50 w-[90%] max-w-4xl">
+
+        <!-- LOGO + TITLE -->
+        <div class="text-center mb-8">
+            <img src="logo.png" class="w-20 mx-auto mb-3">
+            <h1 class="text-3xl font-bold bg-white/70 px-6 py-3 rounded-xl inline-block shadow">
+                Invoice QC Validator
+            </h1>
+            <p class="text-gray-800 mt-2 text-sm font-medium">
+                Validate invoices directly from PDF or JSON.
+            </p>
+        </div>
+
+        <!-- TWO COLUMN LAYOUT -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+
+            <!-- LEFT COLUMN - PDF SECTION -->
+            <div class="bg-white/40 p-6 rounded-xl shadow-lg border border-white/40">
+
+                <h2 class="text-xl font-bold mb-3 text-purple-800">Upload PDF Files</h2>
+
+                <input id="pdfFiles" type="file" accept=".pdf" multiple
+                       class="w-full p-3 bg-white/80 rounded-lg border shadow">
+
+                <button onclick="validatePDFs()"
+                        class="w-full mt-3 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-semibold shadow">
+                    Validate PDF Invoices
+                </button>
+
+                <!-- PDF Loader -->
+                <div id="pdfLoader" class="hidden mt-4 text-center">
+                    <div class="h-8 w-8 mx-auto border-4 border-gray-300 border-t-purple-600 rounded-full animate-spin"></div>
+                    <p class="mt-2 text-gray-700 font-semibold">Processing PDF…</p>
+                </div>
+
+                <!-- PDF Results -->
+                <div id="pdfResults" class="mt-4 max-h-80 overflow-auto"></div>
+            </div>
+
+            <!-- RIGHT COLUMN - JSON SECTION -->
+            <div class="bg-white/40 p-6 rounded-xl shadow-lg border border-white/40">
+
+                <h2 class="text-xl font-bold mb-3 text-blue-800">Upload JSON File</h2>
+
+                <input id="jsonFile" type="file" accept=".json"
+                       class="w-full p-3 bg-white/80 rounded-lg border shadow">
+
+                <button onclick="validateJSON()"
+                        class="w-full mt-3 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-semibold shadow">
+                    Validate JSON
+                </button>
+
+                <!-- JSON Loader -->
+                <div id="jsonLoader" class="hidden mt-4 text-center">
+                    <div class="h-8 w-8 mx-auto border-4 border-gray-300 border-t-blue-600 rounded-full animate-spin"></div>
+                    <p class="mt-2 text-gray-700 font-semibold">Processing JSON…</p>
+                </div>
+
+                <!-- JSON Results -->
+                <div id="jsonResults" class="mt-4 max-h-80 overflow-auto"></div>
+            </div>
+
+        </div>
+    </div>
+
+
+<script>
+    const API = "http://127.0.0.1:8000";
+
+    /* -----------------------------
+         RENDER RESULTS FUNCTION
+    ------------------------------- */
+    function renderResults(targetDiv, data) {
+        const {results, summary} = data;
+
+        let html = `
+            <div class="bg-white/80 p-4 rounded-xl shadow mb-4">
+                <p><b>Total:</b> ${summary.total_invoices}</p>
+                <p><b>Valid:</b> <span class="text-green-700 font-bold">${summary.valid_invoices}</span></p>
+                <p><b>Invalid:</b> <span class="text-red-700 font-bold">${summary.invalid_invoices}</span></p>
+            </div>
+        `;
+
+        results.forEach(inv => {
+            html += `
+            <div class="bg-white/80 p-4 rounded-xl shadow mb-3">
+                <p><b>Invoice ID:</b> ${inv.invoice_id}</p>
+                <p><b>Status:</b>
+                    <span class="${inv.is_valid ? 'text-green-700' : 'text-red-700'} font-bold">
+                        ${inv.is_valid ? 'VALID' : 'INVALID'}
+                    </span>
+                </p>
+                <p><b>Errors:</b> ${inv.errors.length ? inv.errors.join(", ") : "None"}</p>
+            </div>`;
+        });
+
+        targetDiv.innerHTML = html;
+    }
+
+    /* -----------------------------
+        PDF VALIDATION
+    ------------------------------- */
+    async function validatePDFs() {
+        const input = document.getElementById("pdfFiles");
+        const loader = document.getElementById("pdfLoader");
+        const resultsDiv = document.getElementById("pdfResults");
+
+        resultsDiv.innerHTML = "";
+        if (!input.files.length) return alert("Choose PDF files.");
+
+        loader.classList.remove("hidden");
+
+        const form = new FormData();
+        for (let f of input.files) form.append("files", f);
+
+        try {
+            const response = await fetch(API + "/extract-and-validate-pdfs", {
+                method: "POST",
+                body: form
+            });
+
+            const data = await response.json();
+            loader.classList.add("hidden");
+            renderResults(resultsDiv, data);
+
+        } catch (err) {
+            loader.classList.add("hidden");
+            alert("Error validating PDFs.");
+            console.error(err);
+        }
+    }
+
+    /* -----------------------------
+        JSON VALIDATION
+    ------------------------------- */
+    async function validateJSON() {
+        const file = document.getElementById("jsonFile").files[0];
+        const loader = document.getElementById("jsonLoader");
+        const resultsDiv = document.getElementById("jsonResults");
+
+        resultsDiv.innerHTML = "";
+        if (!file) return alert("Choose a JSON file.");
+
+        loader.classList.remove("hidden");
+
+        const text = await file.text();
+        const json = JSON.parse(text);
+
+        try {
+            const response = await fetch(API + "/validate-json", {
+                method: "POST",
+                headers: {"Content-Type":"application/json"},
+                body: JSON.stringify(json)
+            });
+
+            const data = await response.json();
+            loader.classList.add("hidden");
+            renderResults(resultsDiv, data);
+
+        } catch (err) {
+            loader.classList.add("hidden");
+            alert("Error validating JSON.");
+            console.error(err);
+        }
+    }
+</script>
+
+</body>
+</html>
